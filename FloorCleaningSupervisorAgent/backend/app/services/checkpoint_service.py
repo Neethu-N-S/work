@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from app.core.database import checkpoints_container
+from app.core.database import (
+    checkpoints_container,
+    tags_container
+)
 
 
 def _now() -> str:
@@ -89,12 +92,48 @@ def list_checkpoints(store_id: Optional[str] = None):
 
 def deploy_checkpoint(checkpoint_id: str):
     checkpoint = get_checkpoint(checkpoint_id)
+
     if not checkpoint:
         return None
 
     checkpoint["deployment_status"] = "deployed"
     checkpoint["is_active"] = True
-    checkpoints_container.replace_item(item=checkpoint["id"], body=checkpoint)
+
+    checkpoints_container.replace_item(
+        item=checkpoint["id"],
+        body=checkpoint
+    )
+
+    existing_tags = list(
+        tags_container.query_items(
+            query="SELECT * FROM c WHERE c.nfc_tag_uid=@uid",
+            parameters=[
+                {
+                    "name": "@uid",
+                    "value": checkpoint["nfc_tag_uid"]
+                }
+            ],
+            enable_cross_partition_query=True,
+        )
+    )
+
+    if not existing_tags:
+        tag_item = {
+            "id": checkpoint["id"],
+            "store_id": checkpoint["store_id"],
+            "nfc_tag_uid": checkpoint["nfc_tag_uid"],
+            "location": checkpoint["name"],
+            "area": checkpoint.get("area"),
+            "floor": checkpoint.get("floor"),
+            "zone": checkpoint.get("zone"),
+            "priority": checkpoint.get("priority"),
+            "status": "active",
+            "registered_at": checkpoint["registered_at"],
+            "scan_count": 0,
+        }
+
+        tags_container.create_item(tag_item)
+
     return checkpoint
 
 
